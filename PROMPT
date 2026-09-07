@@ -1,0 +1,1535 @@
+# AGENTE DE GESTIÓN AUTOMÁTICA DE FACTURAS
+
+## 0. MISIÓN
+
+Construye un agente de producción especializado en la gestión automática de facturas de una empresa.
+
+El agente debe:
+
+1. Supervisar una carpeta de entrada de Google Drive.
+2. Detectar nuevas facturas.
+3. Leer y analizar los documentos.
+4. Extraer y validar los datos relevantes.
+5. Registrar las facturas en Google Sheets.
+6. Mantener un registro interno estructurado del procesamiento.
+7. Organizar automáticamente las facturas en Google Drive.
+8. Detectar duplicados, errores e inconsistencias.
+9. Gestionar situaciones que requieran intervención humana.
+10. Mantener trazabilidad completa de sus acciones.
+11. Documentar los conectores utilizados.
+12. Registrar aprendizajes relevantes derivados de su funcionamiento.
+13. Estar preparado para desplegarse en Cloudflare.
+14. Diseñarse para poder reutilizarse posteriormente con diferentes clientes.
+
+No construyas únicamente una automatización lineal.
+
+Construye un sistema mantenible, observable, seguro y preparado para evolucionar.
+
+---
+
+# 1. PRINCIPIOS GENERALES
+
+El agente debe seguir estos principios:
+
+- No inventar datos.
+- Priorizar operaciones deterministas frente al uso innecesario de IA.
+- Utilizar IA cuando exista interpretación, ambigüedad o clasificación.
+- Mantener trazabilidad de las decisiones importantes.
+- Evitar acciones irreversibles cuando exista incertidumbre.
+- Permitir intervención humana.
+- Evitar procesamientos duplicados.
+- Separar lógica, datos, configuración, conectores y memoria.
+- Aplicar mínimo privilegio a todos los conectores.
+- Mantener los secretos fuera del código.
+- Diseñar pensando en producción.
+- Diseñar pensando en reutilización.
+- Mantener la lógica de negocio independiente del cliente siempre que sea posible.
+
+El agente debe ser idempotente:
+
+> ejecutar dos veces una misma operación no debe producir registros, archivos o acciones duplicadas.
+
+---
+
+# 2. FLUJO PRINCIPAL
+
+El flujo esperado es:
+
+Google Drive
+↓
+Detectar nuevo archivo
+↓
+Comprobar si ya fue procesado
+↓
+Identificar tipo de documento
+↓
+Extraer información
+↓
+Validar información
+↓
+Identificar proveedor
+↓
+Normalizar proveedor
+↓
+Comprobar duplicados
+↓
+Registrar estado interno
+↓
+Registrar factura en Google Sheets
+↓
+Crear estructura de carpetas si es necesario
+↓
+Mover factura
+↓
+Registrar ejecución
+↓
+Finalizar
+
+Si alguna fase falla:
+
+ERROR
+↓
+Registrar incidente
+↓
+Determinar si puede reintentarse
+↓
+Reintentar cuando corresponda
+o
+↓
+Enviar a revisión humana
+
+---
+
+# 3. GOOGLE DRIVE
+
+Debe existir una carpeta de entrada configurable.
+
+Ejemplo conceptual:
+
+FACTURAS_ENTRADA
+
+El agente debe revisar esta carpeta mediante el mecanismo más apropiado disponible.
+
+Debe detectar archivos nuevos y procesarlos individualmente.
+
+Los documentos pueden ser:
+
+- PDF;
+- imágenes;
+- documentos escaneados;
+- facturas digitales;
+- otros formatos compatibles.
+
+No asumas que todos los archivos introducidos son facturas.
+
+Primero determina si el documento parece corresponder realmente a una factura.
+
+Los documentos no identificados como factura deben marcarse para revisión o clasificarse apropiadamente.
+
+---
+
+# 4. EXTRACCIÓN DE DATOS
+
+Para cada factura intenta obtener:
+
+## Identificación
+
+- proveedor;
+- nombre fiscal;
+- CIF/NIF/VAT;
+- número de factura;
+- fecha de emisión;
+- fecha de vencimiento;
+- periodo facturado.
+
+## Información económica
+
+- base imponible;
+- tipo de IVA;
+- importe de IVA;
+- otros impuestos;
+- retenciones;
+- descuentos;
+- total;
+- moneda.
+
+## Información adicional
+
+- concepto;
+- método de pago;
+- IBAN cuando aparezca;
+- número de pedido cuando exista;
+- referencia contractual cuando exista.
+
+## Información técnica
+
+- nombre original del archivo;
+- Google Drive File ID;
+- URL/referencia del documento;
+- fecha de recepción;
+- fecha de procesamiento;
+- identificador interno;
+- estado;
+- nivel de confianza;
+- observaciones.
+
+No inventes campos ausentes.
+
+Utiliza NULL, vacío o el estado correspondiente cuando un dato no pueda determinarse.
+
+---
+
+# 5. VALIDACIÓN DETERMINISTA
+
+Siempre que sea posible, las comprobaciones deben realizarse mediante código y no mediante un LLM.
+
+Ejemplos:
+
+- comprobar importes;
+- comprobar fechas;
+- comprobar formatos;
+- comprobar identificadores fiscales;
+- detectar duplicados;
+- comprobar operaciones matemáticas;
+- generar identificadores;
+- determinar año y mes;
+- comprobar existencia de carpetas;
+- comprobar existencia de registros.
+
+Cuando exista:
+
+base + impuestos - retenciones = total
+
+comprueba matemáticamente la consistencia.
+
+Si existe una discrepancia superior a la tolerancia configurada, marca:
+
+REVIEW_REQUIRED
+
+No modifiques silenciosamente los valores extraídos para hacerlos coincidir.
+
+---
+
+# 6. USO DE IA
+
+Utiliza modelos de IA principalmente para tareas que requieran interpretación.
+
+Por ejemplo:
+
+- interpretar documentos;
+- localizar campos en formatos desconocidos;
+- identificar conceptos;
+- reconocer proveedores;
+- clasificar documentos;
+- resolver variaciones lingüísticas;
+- interpretar textos ambiguos.
+
+No utilices IA para operaciones que puedan resolverse de forma determinista de manera fiable.
+
+---
+
+# 7. IDENTIFICADOR ÚNICO
+
+Cada factura debe tener un identificador interno.
+
+Debe existir un mecanismo que permita reconocer inequívocamente documentos previamente procesados.
+
+Cuando sea útil, utiliza:
+
+- Google Drive File ID;
+- hash del archivo;
+- proveedor;
+- CIF/VAT;
+- número de factura;
+- fecha;
+- importe.
+
+El sistema debe poder detectar tanto:
+
+### mismo archivo
+
+como:
+
+### misma factura introducida mediante archivos diferentes.
+
+---
+
+# 8. DETECCIÓN DE DUPLICADOS
+
+Antes de registrar una factura comprueba posibles duplicados.
+
+Utiliza especialmente:
+
+- CIF/VAT del proveedor;
+- número de factura;
+- fecha;
+- importe total;
+- hash del archivo.
+
+Si existe coincidencia fuerte:
+
+no crees automáticamente un segundo registro.
+
+Marca:
+
+POSSIBLE_DUPLICATE
+
+y registra la factura relacionada.
+
+---
+
+# 9. PROVEEDORES
+
+Mantén un registro estructurado de proveedores.
+
+Campos recomendados:
+
+provider_id
+normalized_name
+legal_name
+tax_id
+country
+category
+aliases
+created_at
+updated_at
+
+El CIF/VAT debe utilizarse como señal fuerte para identificar proveedores.
+
+Evita crear proveedores duplicados por diferencias de escritura.
+
+Por ejemplo:
+
+GOOGLE IRELAND LTD
+Google Ireland Limited
+Google Ireland
+
+pueden corresponder al mismo proveedor.
+
+Las equivalencias aprendidas deben almacenarse de forma estructurada.
+
+---
+
+# 10. ORGANIZACIÓN DE GOOGLE DRIVE
+
+Después de procesar correctamente una factura, organízala siguiendo:
+
+FACTURAS
+└── AÑO
+    └── MES
+        └── PROVEEDOR
+
+Por ejemplo:
+
+FACTURAS
+└── 2026
+    └── 09
+        ├── Google
+        ├── Hostinger
+        └── Iberdrola
+
+Utiliza la fecha de la factura como criterio principal para determinar año y mes, salvo que se defina otra regla.
+
+Si una carpeta no existe:
+
+créala.
+
+Si existe:
+
+reutilízala.
+
+Nunca generes carpetas duplicadas innecesariamente.
+
+Utiliza el nombre normalizado del proveedor.
+
+---
+
+# 11. GOOGLE SHEETS
+
+Las facturas procesadas deben registrarse en una hoja configurable de Google Sheets.
+
+Columnas iniciales recomendadas:
+
+id
+fecha_factura
+proveedor
+cif
+numero_factura
+base_imponible
+iva
+retencion
+otros_impuestos
+total
+moneda
+fecha_vencimiento
+concepto
+metodo_pago
+archivo
+drive_file_id
+drive_url
+estado
+confianza
+observaciones
+fecha_procesamiento
+
+Diseña el sistema para permitir añadir columnas posteriormente.
+
+Google Sheets debe funcionar principalmente como interfaz operativa cómoda para el cliente.
+
+No dependas exclusivamente de Google Sheets para mantener el estado interno del agente.
+
+---
+
+# 12. BASE DE DATOS INTERNA
+
+Utiliza una base de datos estructurada cuando sea necesaria para mantener el estado real del sistema.
+
+Si se despliega en Cloudflare, considera D1.
+
+Tablas conceptuales:
+
+clients
+invoices
+providers
+processing_runs
+incidents
+learning_candidates
+approved_learnings
+connector_state
+
+No es obligatorio utilizar exactamente estas tablas.
+
+Diseña el modelo apropiado antes de implementarlo.
+
+---
+
+# 13. ESTADOS
+
+Define estados claros.
+
+Por ejemplo:
+
+RECEIVED
+PROCESSING
+PROCESSED
+REVIEW_REQUIRED
+POSSIBLE_DUPLICATE
+FAILED
+RETRY_PENDING
+ARCHIVED
+
+Los estados deben permitir conocer exactamente qué está ocurriendo con cada documento.
+
+Evita estados ambiguos.
+
+---
+
+# 14. EJECUCIONES
+
+Cada procesamiento debe generar un registro de ejecución.
+
+Como mínimo:
+
+run_id
+client_id
+invoice_id
+file_id
+status
+started_at
+finished_at
+current_step
+retry_count
+error_code
+error_message
+
+Esto debe permitir reconstruir posteriormente qué ocurrió.
+
+---
+
+# 15. ERRORES Y REINTENTOS
+
+Clasifica los errores.
+
+Distingue entre:
+
+### errores temporales
+
+Ejemplo:
+
+API no disponible.
+
+Pueden reintentarse.
+
+### errores permanentes
+
+Ejemplo:
+
+archivo corrupto.
+
+No deben reintentarse indefinidamente.
+
+### errores de interpretación
+
+Ejemplo:
+
+importe ilegible.
+
+Deben enviarse a revisión.
+
+Establece un número máximo configurable de reintentos.
+
+Evita loops infinitos.
+
+---
+
+# 16. HUMAN-IN-THE-LOOP
+
+El sistema debe permitir intervención humana.
+
+Debe existir algún mecanismo para:
+
+- revisar facturas;
+- corregir campos;
+- confirmar proveedores;
+- resolver duplicados;
+- aprobar documentos;
+- rechazar documentos;
+- corregir clasificaciones.
+
+Las correcciones humanas deben quedar registradas.
+
+Nunca sobrescribas silenciosamente el dato original.
+
+Cuando sea relevante conserva:
+
+original_value
+corrected_value
+corrected_by
+corrected_at
+
+---
+
+# 17. MEMORIA
+
+Distingue estrictamente entre:
+
+## ESTADO OPERATIVO
+
+Información necesaria para que el sistema funcione.
+
+Ejemplos:
+
+- facturas procesadas;
+- proveedores;
+- identificadores;
+- ejecuciones;
+- errores;
+- estados;
+- rutas.
+
+Debe almacenarse estructuradamente.
+
+## MEMORIA
+
+Información útil para mejorar futuras decisiones.
+
+Ejemplos:
+
+- preferencias;
+- contexto recurrente;
+- particularidades relevantes del cliente.
+
+## APRENDIZAJES
+
+Conocimiento adquirido durante el funcionamiento que puede convertirse en una regla reutilizable.
+
+No mezcles estas tres categorías.
+
+---
+
+# 18. APRENDIZAJES
+
+No registres automáticamente cualquier observación como aprendizaje.
+
+Un aprendizaje debe ser:
+
+- relevante;
+- repetible;
+- suficientemente estable;
+- útil para futuras ejecuciones.
+
+Cada aprendizaje debe contener:
+
+learning_id
+client_id
+date
+context
+observation
+learning
+evidence
+confidence
+impact
+status
+
+Estados posibles:
+
+CANDIDATE
+VALIDATED
+REJECTED
+SUPERSEDED
+
+Los aprendizajes importantes deben poder transformarse posteriormente en reglas.
+
+Ejemplo conceptual:
+
+observación:
+"Google Ireland aparece repetidamente con diferentes nombres."
+
+aprendizaje:
+"VAT IE6388047V corresponde al proveedor normalizado Google Ireland."
+
+Una corrección humana repetida puede generar un candidato de aprendizaje.
+
+---
+
+# 19. CONECTORES
+
+Toda integración externa debe estar encapsulada y documentada.
+
+No disperses llamadas directas a servicios externos por toda la lógica del agente.
+
+Crea una capa clara de conectores.
+
+Por ejemplo:
+
+connectors/
+    google_drive
+    google_sheets
+    cloudflare
+    llm
+
+Cada conector debe documentar:
+
+- propósito;
+- autenticación;
+- permisos;
+- operaciones disponibles;
+- inputs;
+- outputs;
+- errores;
+- límites;
+- reintentos;
+- dependencias;
+- configuración necesaria.
+
+---
+
+# 20. GOOGLE DRIVE CONNECTOR
+
+Documenta:
+
+- autenticación;
+- permisos;
+- carpetas autorizadas;
+- detección de archivos;
+- lectura;
+- descarga;
+- creación de carpetas;
+- movimiento de archivos;
+- búsquedas;
+- IDs utilizados;
+- tratamiento de errores;
+- límites de API.
+
+Aplica mínimo privilegio.
+
+El agente no debe obtener acceso innecesario al Drive completo del cliente cuando pueda trabajar únicamente con carpetas concretas.
+
+---
+
+# 21. GOOGLE SHEETS CONNECTOR
+
+Documenta:
+
+- autenticación;
+- Spreadsheet ID;
+- Sheet ID;
+- columnas;
+- lectura;
+- inserción;
+- actualización;
+- búsqueda;
+- detección de duplicados;
+- errores;
+- límites.
+
+---
+
+# 22. CLOUDFLARE
+
+El sistema debe estar preparado para desplegarse en Cloudflare.
+
+Evalúa qué componentes son necesarios.
+
+Considera:
+
+### Workers
+
+Para ejecutar APIs y lógica.
+
+### D1
+
+Para persistencia estructurada.
+
+### Durable Objects
+
+Cuando realmente se necesite estado coordinado o persistente asociado a una entidad.
+
+### Queues
+
+Para procesamiento asíncrono y desacoplar recepción de procesamiento.
+
+### Cron Triggers
+
+Para procesos periódicos.
+
+### R2
+
+Para almacenamiento de archivos cuando tenga sentido.
+
+### Secrets
+
+Para credenciales y claves.
+
+No utilices servicios simplemente porque estén disponibles.
+
+Justifica cada componente utilizado.
+
+---
+
+# 23. PROCESAMIENTO ASÍNCRONO
+
+El sistema debe soportar carga variable.
+
+No asumas que llegará una factura cada vez.
+
+Puede ocurrir que un cliente introduzca:
+
+1 factura
+
+o
+
+500 facturas.
+
+Cuando corresponda utiliza una cola.
+
+Arquitectura conceptual:
+
+Google Drive
+↓
+Detector
+↓
+Cloudflare Queue
+↓
+Worker
+↓
+Procesamiento individual
+↓
+D1
+↓
+Google Sheets
+↓
+Organización Drive
+
+Cada factura debe poder procesarse independientemente.
+
+El fallo de una factura no debe bloquear las demás.
+
+---
+
+# 24. CONFIGURACIÓN
+
+No introduzcas valores específicos de clientes directamente en el código.
+
+Utiliza configuración.
+
+Ejemplo:
+
+CLIENT_ID
+GOOGLE_DRIVE_INPUT_FOLDER_ID
+GOOGLE_DRIVE_ARCHIVE_FOLDER_ID
+GOOGLE_SPREADSHEET_ID
+GOOGLE_SHEET_NAME
+TIMEZONE
+DEFAULT_CURRENCY
+CONFIDENCE_THRESHOLD
+MAX_RETRIES
+
+Diferencia entre:
+
+configuración pública
+
+y
+
+secretos.
+
+---
+
+# 25. SECRETOS
+
+Nunca guardes en:
+
+- repositorio;
+- documentación;
+- logs;
+- prompts;
+- base de datos sin protección;
+
+datos como:
+
+API keys
+OAuth secrets
+access tokens
+refresh tokens
+passwords
+
+Utiliza mecanismos seguros de gestión de secretos.
+
+---
+
+# 26. MULTI-TENANCY
+
+Diseña la arquitectura pensando en que este agente pueda utilizarse posteriormente con diferentes clientes.
+
+La lógica principal debe ser común.
+
+Cada cliente tendrá su propia:
+
+- configuración;
+- autenticación;
+- carpetas;
+- Sheet;
+- proveedores;
+- reglas específicas;
+- memoria;
+- aprendizajes;
+- permisos.
+
+Toda información persistente debe asociarse a:
+
+client_id
+
+cuando corresponda.
+
+Nunca mezcles información entre clientes.
+
+El aislamiento entre clientes es un requisito crítico.
+
+---
+
+# 27. OBSERVABILIDAD
+
+El sistema debe permitir saber:
+
+- qué está funcionando;
+- qué está fallando;
+- cuánto tarda;
+- qué factura se está procesando;
+- qué conector falló;
+- cuántos reintentos se realizaron;
+- qué acciones realizó el agente.
+
+Implementa logs estructurados.
+
+Incluye cuando corresponda:
+
+timestamp
+client_id
+run_id
+invoice_id
+component
+action
+result
+duration
+error_code
+
+No introduzcas innecesariamente datos sensibles en logs.
+
+---
+
+# 28. MÉTRICAS
+
+Prepara el sistema para medir:
+
+- facturas procesadas;
+- facturas correctas;
+- facturas con revisión;
+- duplicados;
+- errores;
+- tiempo medio de procesamiento;
+- coste medio de procesamiento;
+- llamadas al modelo;
+- consumo por cliente;
+- tasa de automatización;
+- porcentaje de intervención humana.
+
+Estas métricas serán importantes para evaluar la rentabilidad del agente cuando se comercialice.
+
+---
+
+# 29. COSTES
+
+El sistema debe permitir conocer aproximadamente cuánto cuesta operar cada cliente.
+
+Registra cuando sea posible:
+
+- llamadas al modelo;
+- tokens;
+- almacenamiento;
+- ejecuciones;
+- operaciones relevantes;
+- recursos Cloudflare;
+- otros servicios externos.
+
+No optimices prematuramente, pero diseña para poder medirlo.
+
+---
+
+# 30. SEGURIDAD
+
+Aplica:
+
+- mínimo privilegio;
+- aislamiento por cliente;
+- secretos fuera del código;
+- validación de inputs;
+- control de errores;
+- protección contra acciones duplicadas;
+- trazabilidad;
+- control de permisos.
+
+Trata las facturas como documentación empresarial potencialmente sensible.
+
+No envíes documentos o información a servicios externos innecesarios.
+
+---
+
+# 31. PRIVACIDAD Y RETENCIÓN
+
+Define explícitamente:
+
+- qué información se almacena;
+- dónde se almacena;
+- durante cuánto tiempo;
+- qué información puede eliminarse;
+- qué ocurre cuando un cliente deja el servicio.
+
+No conserves información indefinidamente sin necesidad.
+
+Diseña mecanismos de exportación y eliminación por cliente.
+
+---
+
+# 32. ARQUITECTURA DESACOPLADA
+
+Separa:
+
+/core
+    lógica principal
+
+/connectors
+    servicios externos
+
+/database
+    persistencia
+
+/agents
+    capacidades agénticas
+
+/workflows
+    procesos
+
+/config
+    configuración
+
+/docs
+    documentación
+
+/tests
+    pruebas
+
+La estructura definitiva puede variar.
+
+Lo importante es mantener separación de responsabilidades.
+
+---
+
+# 33. API
+
+Diseña el sistema para que sus capacidades puedan exponerse mediante API cuando sea necesario.
+
+Por ejemplo:
+
+POST /invoices/process
+
+GET /invoices/:id
+
+GET /invoices
+
+POST /invoices/:id/retry
+
+POST /invoices/:id/review
+
+GET /providers
+
+No es obligatorio implementar todos estos endpoints inicialmente.
+
+Diseña la arquitectura para permitirlo.
+
+---
+
+# 34. DOCUMENTACIÓN DEL AGENTE
+
+Mantén como mínimo:
+
+AGENT.md
+CONNECTORS.md
+ARCHITECTURE.md
+DATA_MODEL.md
+RULES.md
+LEARNINGS.md
+DEPLOYMENT.md
+CHANGELOG.md
+
+---
+
+# 35. AGENT.md
+
+Debe explicar:
+
+- misión;
+- alcance;
+- responsabilidades;
+- límites;
+- flujo general;
+- herramientas;
+- comportamiento;
+- decisiones;
+- human-in-the-loop.
+
+Debe ser suficientemente conciso para servir como referencia operativa.
+
+---
+
+# 36. CONNECTORS.md
+
+Debe registrar cada conector.
+
+Para cada uno:
+
+## Nombre
+
+### Propósito
+
+### Autenticación
+
+### Permisos
+
+### Operaciones
+
+### Inputs
+
+### Outputs
+
+### Errores
+
+### Reintentos
+
+### Configuración
+
+### Secretos necesarios
+
+### Limitaciones
+
+Mantén este documento actualizado cuando cambie una integración.
+
+---
+
+# 37. ARCHITECTURE.md
+
+Documenta:
+
+- componentes;
+- responsabilidades;
+- flujo de información;
+- infraestructura;
+- decisiones arquitectónicas importantes.
+
+Incluye diagramas Mermaid cuando ayuden a comprender el sistema.
+
+---
+
+# 38. DATA_MODEL.md
+
+Documenta:
+
+- tablas;
+- campos;
+- relaciones;
+- identificadores;
+- índices;
+- restricciones;
+- estados.
+
+La documentación debe coincidir con la implementación real.
+
+---
+
+# 39. RULES.md
+
+Las reglas de negocio deben mantenerse explícitas.
+
+Ejemplos:
+
+- cómo se detecta un duplicado;
+- cómo se determina el mes;
+- cómo se normalizan proveedores;
+- cuándo una factura requiere revisión;
+- cuándo se reintenta;
+- cuándo se mueve un documento.
+
+Cuando una regla cambie, actualiza este documento.
+
+---
+
+# 40. LEARNINGS.md
+
+Registra únicamente aprendizajes relevantes.
+
+No conviertas este archivo en un log.
+
+Cada entrada debe explicar:
+
+- fecha;
+- contexto;
+- descubrimiento;
+- evidencia;
+- decisión;
+- impacto;
+- estado.
+
+Cuando un aprendizaje se convierta en regla:
+
+actualiza RULES.md.
+
+Conserva en LEARNINGS.md la referencia histórica cuando resulte útil.
+
+---
+
+# 41. DEPLOYMENT.md
+
+Documenta exactamente cómo desplegar el sistema.
+
+Incluye:
+
+- requisitos;
+- Cloudflare;
+- variables;
+- secretos;
+- Google OAuth;
+- base de datos;
+- migraciones;
+- queues;
+- cron;
+- comandos;
+- pruebas;
+- rollback.
+
+El objetivo es que otra persona pueda desplegar el agente sin tener que descubrir cómo funciona examinando el código.
+
+---
+
+# 42. CHANGELOG.md
+
+Registra cambios relevantes:
+
+- nuevas funcionalidades;
+- cambios arquitectónicos;
+- cambios de reglas;
+- nuevos conectores;
+- correcciones importantes;
+- cambios de esquema.
+
+No registres cambios triviales.
+
+---
+
+# 43. TESTS
+
+Implementa pruebas para la lógica crítica.
+
+Especialmente:
+
+- detección de duplicados;
+- cálculos;
+- normalización;
+- estados;
+- idempotencia;
+- errores;
+- reintentos;
+- aislamiento entre clientes.
+
+Incluye documentos de prueba anonimizados cuando sea necesario.
+
+---
+
+# 44. CASOS LÍMITE
+
+Antes de considerar terminado un módulo, contempla situaciones como:
+
+- factura duplicada;
+- mismo PDF con otro nombre;
+- factura rectificativa;
+- factura negativa;
+- varias facturas del mismo proveedor;
+- proveedor nuevo;
+- proveedor escrito de forma diferente;
+- factura sin CIF;
+- factura sin número;
+- factura extranjera;
+- moneda extranjera;
+- IVA diferente;
+- documento ilegible;
+- documento que no es factura;
+- PDF con varias páginas;
+- PDF que contiene varias facturas;
+- archivo corrupto;
+- Google Drive no disponible;
+- Sheets no disponible;
+- modelo no disponible;
+- procesamiento interrumpido;
+- dos ejecuciones simultáneas sobre la misma factura.
+
+No es necesario automatizar perfectamente todos los casos desde V1.
+
+Sí debes evitar comportamientos peligrosos o pérdida de información.
+
+---
+
+# 45. VERSIONADO
+
+Considera el agente como un producto versionado.
+
+Ejemplo conceptual:
+
+Invoice Agent
+v1.0
+v1.1
+v2.0
+
+Las mejoras generales deben incorporarse al núcleo.
+
+Las particularidades de un cliente deben mantenerse preferentemente como configuración o reglas específicas del cliente.
+
+Evita crear forks innecesarios por cliente.
+
+---
+
+# 46. DESPLIEGUE POR CLIENTE
+
+El objetivo arquitectónico es poder realizar:
+
+CORE DEL AGENTE
+↓
+DEPLOY
+↓
+CONFIGURACIÓN CLIENTE
+↓
+CREDENCIALES
+↓
+CONECTORES
+↓
+ACTIVACIÓN
+
+Evita modificar manualmente el código para cada nuevo cliente salvo que exista una necesidad real.
+
+---
+
+# 47. PORTABILIDAD
+
+Aunque el despliegue inicial esté pensado para Cloudflare, evita dependencias innecesarias.
+
+La lógica principal del agente debe poder separarse de:
+
+- infraestructura;
+- proveedor de IA;
+- Google;
+- interfaz.
+
+Utiliza adaptadores/conectores cuando tenga sentido.
+
+Esto permitirá sustituir componentes posteriormente.
+
+---
+
+# 48. EVOLUCIÓN
+
+Diseña el agente para poder añadir posteriormente:
+
+- recepción de facturas por Gmail;
+- WhatsApp;
+- Telegram;
+- OCR especializado;
+- ERP;
+- software contable;
+- aprobación de pagos;
+- análisis de gastos;
+- alertas;
+- dashboards;
+- informes;
+- detección de anomalías;
+- presupuestos;
+- conciliación bancaria;
+- otros agentes.
+
+No implementes ahora funcionalidades que no sean necesarias.
+
+Simplemente evita decisiones arquitectónicas que dificulten su incorporación futura.
+
+---
+
+# 49. CRITERIO PARA TOMAR DECISIONES
+
+Cuando tengas varias soluciones posibles prioriza, en este orden:
+
+1. seguridad;
+2. integridad de datos;
+3. simplicidad;
+4. fiabilidad;
+5. mantenibilidad;
+6. observabilidad;
+7. coste;
+8. rendimiento.
+
+No introduzcas complejidad sin una razón concreta.
+
+---
+
+# 50. FORMA DE TRABAJAR
+
+No intentes construir todo inmediatamente.
+
+Trabaja por fases.
+
+## FASE 1 — DESCUBRIMIENTO
+
+Analiza los requisitos.
+
+Identifica:
+
+- información faltante;
+- decisiones necesarias;
+- riesgos;
+- dependencias;
+- conectores;
+- credenciales necesarias.
+
+Hazme las preguntas que consideres realmente necesarias antes de fijar decisiones importantes.
+
+No preguntes cuestiones que puedas resolver razonablemente mediante buenas prácticas.
+
+---
+
+## FASE 2 — ARQUITECTURA
+
+Antes de programar presenta:
+
+1. arquitectura propuesta;
+2. componentes;
+3. modelo de datos;
+4. flujo principal;
+5. conectores;
+6. infraestructura Cloudflare;
+7. estrategia de autenticación;
+8. estrategia de idempotencia;
+9. gestión de errores;
+10. sistema de aprendizajes;
+11. decisiones que requieran mi aprobación.
+
+No escribas todavía toda la aplicación.
+
+Espera aprobación de la arquitectura cuando implique decisiones relevantes.
+
+---
+
+## FASE 3 — MVP
+
+Construye primero el flujo mínimo:
+
+Drive
+→ detectar factura
+→ extraer
+→ validar
+→ registrar
+→ organizar.
+
+Prioriza funcionamiento real sobre funcionalidades secundarias.
+
+---
+
+## FASE 4 — ROBUSTEZ
+
+Añade:
+
+- D1;
+- idempotencia;
+- duplicados;
+- reintentos;
+- Queues cuando sean necesarias;
+- logs;
+- estados;
+- revisión humana;
+- gestión de errores.
+
+---
+
+## FASE 5 — PRODUCCIÓN
+
+Añade:
+
+- seguridad;
+- métricas;
+- monitorización;
+- costes;
+- tests;
+- documentación;
+- despliegue reproducible.
+
+---
+
+## FASE 6 — PRODUCTIZACIÓN
+
+Prepara el proyecto para reutilizarlo.
+
+Separa:
+
+CORE
+CONFIGURACIÓN
+CLIENTE
+CONECTORES
+SECRETOS
+
+El objetivo final debe ser poder desplegar nuevas instancias o configurar nuevos clientes con el menor trabajo manual posible.
+
+---
+
+# 51. REGLA DE DOCUMENTACIÓN CONTINUA
+
+La documentación forma parte del producto.
+
+No la dejes para el final.
+
+Cuando:
+
+- añadas un conector;
+- cambies arquitectura;
+- cambies el modelo de datos;
+- introduzcas una regla;
+- descubras un aprendizaje relevante;
+- cambies el despliegue;
+
+actualiza inmediatamente el documento correspondiente.
+
+El código y la documentación nunca deberían describir sistemas diferentes.
+
+---
+
+# 52. REGLA DE APRENDIZAJE CONTINUO
+
+Durante el funcionamiento del agente observa patrones que puedan mejorar futuras ejecuciones.
+
+No modifiques automáticamente reglas importantes basándote en una única observación.
+
+Utiliza:
+
+OBSERVACIÓN
+↓
+CANDIDATO DE APRENDIZAJE
+↓
+EVIDENCIA
+↓
+VALIDACIÓN
+↓
+REGLA
+
+Los aprendizajes específicos de un cliente deben permanecer asociados a ese cliente.
+
+Los aprendizajes potencialmente generales deben identificarse como candidatos para incorporarse al CORE, pero no deben propagarse automáticamente al resto de clientes.
+
+---
+
+# 53. REGLA SOBRE CONECTORES
+
+Cada vez que incorpores una nueva integración:
+
+1. identifica qué necesita hacer;
+2. determina los permisos mínimos;
+3. implementa el conector;
+4. documenta autenticación;
+5. documenta operaciones;
+6. documenta errores;
+7. documenta límites;
+8. implementa pruebas;
+9. evita acoplar el core directamente al proveedor.
+
+Esto aplica especialmente a:
+
+Google Drive
+Google Sheets
+Cloudflare
+modelos de IA
+y futuras integraciones.
+
+---
+
+# 54. RESULTADO ESPERADO
+
+No quiero únicamente código que funcione.
+
+Quiero un agente que pueda:
+
+- entenderse;
+- mantenerse;
+- desplegarse;
+- monitorizarse;
+- corregirse;
+- evolucionar;
+- reutilizarse;
+- aprender de casos relevantes;
+- integrarse con otros sistemas.
+
+Este proyecto debe servir además como referencia arquitectónica para futuros agentes empresariales.
+
+---
+
+# 55. PRIMERA TAREA
+
+No empieces programando toda la solución.
+
+Primero:
+
+1. analiza este documento;
+2. detecta contradicciones o requisitos innecesarios;
+3. señala decisiones importantes que todavía no estén definidas;
+4. propón una arquitectura V1 sencilla;
+5. indica exactamente qué servicios de Cloudflare utilizarías y por qué;
+6. explica cómo conectarías Google Drive y Google Sheets;
+7. define dónde almacenarías estado, memoria y aprendizajes;
+8. propón la estructura inicial del repositorio;
+9. indica qué partes resolverías con código determinista y cuáles mediante IA;
+10. identifica riesgos de seguridad y privacidad;
+11. hazme únicamente las preguntas que realmente necesites resolver antes de comenzar.
+
+Prioriza una V1 sencilla que funcione.
+
+No sobrediseñes el sistema por funcionalidades futuras.
