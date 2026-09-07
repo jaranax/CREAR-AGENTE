@@ -1,0 +1,17 @@
+## Descripción del proyecto
+
+Este repositorio documenta el proceso para **diseñar, construir y desplegar agentes de IA orientados a automatizar procesos reales de negocio**.
+
+La idea es desarrollar una metodología reutilizable que permita pasar de una necesidad concreta de un cliente a un **agente operativo en producción**, definiendo su lógica, herramientas, conectores, memoria, datos, reglas de negocio, seguridad y mecanismos de aprendizaje.
+
+Los agentes se desarrollarán apoyándonos en herramientas de programación asistida por IA como **Codex** y estarán preparados para desplegarse en infraestructuras cloud como **Cloudflare**, conectándose a los sistemas que utiliza cada empresa: Google Drive, Sheets, Gmail, CRM, APIs, bases de datos u otros servicios.
+
+Un aspecto central del proyecto es que los agentes no sean simples automatizaciones aisladas. Cada agente debe poder **ejecutar workflows, utilizar herramientas, mantener estado, registrar sus acciones, gestionar errores, solicitar intervención humana cuando sea necesaria y documentar aprendizajes relevantes** obtenidos durante su funcionamiento.
+
+Como primer caso práctico se está diseñando un **agente de gestión de facturas** que revisa una carpeta de Google Drive, interpreta las facturas, extrae y valida sus datos, los registra en Google Sheets y reorganiza automáticamente los documentos por año, mes y proveedor.
+
+El objetivo final es crear una **arquitectura y metodología base reutilizable**, de forma que nuevos agentes para clientes puedan construirse siguiendo un patrón común:
+
+**Necesidad del negocio → definición del agente → workflows → herramientas y conectores → datos y memoria → desarrollo → despliegue → monitorización → aprendizaje → evolución.**
+
+De esta forma, el repositorio servirá tanto como **documentación técnica y conceptual** como base de conocimiento para ir perfeccionando una metodología propia de creación y despliegue de agentes empresariales.
